@@ -3,34 +3,42 @@ var popupMask;
 var popupDialog;
 var clientId;
 var realm;
-var oauth2KeyName;
 var redirect_uri;
+var state;
 var clientSecret;
 var scopeSeparator;
+var additionalQueryStringParams;
 
 function handleLogin() {
   var scopes = [];
 
-  var auths = window.swaggerUi.api.authSchemes || window.swaggerUi.api.securityDefinitions;
+  var auths = window.swaggerUi.api.authSchemes || window.swaggerUi.api.securityDefinitions,
+      passwordFlow = false;
+
   if(auths) {
     var key;
     var defs = auths;
     for(key in defs) {
       var auth = defs[key];
-      if(auth.type === 'oauth2' && auth.scopes) {
-        oauth2KeyName = key;
-        var scope;
-        if(Array.isArray(auth.scopes)) {
-          // 1.2 support
-          var i;
-          for(i = 0; i < auth.scopes.length; i++) {
-            scopes.push(auth.scopes[i]);
+      if(auth.type === 'oauth2') {
+        passwordFlow = auth.flow === 'password';
+
+        if (auth.scopes) {
+          var scope;
+          if(Array.isArray(auth.scopes)) {
+            // 1.2 support
+            var i;
+            for(i = 0; i < auth.scopes.length; i++) {
+              scope = auth.scopes[i];
+              scope.OAuthSchemeKey = key;
+              scopes.push(scope);
+            }
           }
-        }
-        else {
-          // 2.0 support
-          for(scope in auth.scopes) {
-            scopes.push({scope: scope, description: auth.scopes[scope]});
+          else {
+            // 2.0 support
+            for(scope in auth.scopes) {
+              scopes.push({scope: scope, description: auth.scopes[scope], OAuthSchemeKey: key});
+            }
           }
         }
       }
@@ -42,29 +50,50 @@ function handleLogin() {
     appName = window.swaggerUi.api.info.title;
   }
 
-  $('.api-popup-dialog').remove(); 
-  popupDialog = $(
-    [
-      '<div class="api-popup-dialog">',
-      '<div class="api-popup-title">Select OAuth2.0 Scopes</div>',
-      '<div class="api-popup-content">',
-        '<p>Scopes are used to grant an application different levels of access to data on behalf of the end user. Each API may declare one or more scopes.',
-          '<a href="#">Learn how to use</a>',
-        '</p>',
-        '<p><strong>' + appName + '</strong> API requires the following scopes. Select which ones you want to grant to Swagger UI.</p>',
-        '<ul class="api-popup-scopes">',
-        '</ul>',
-        '<p class="error-msg"></p>',
-        '<div class="api-popup-actions"><button class="api-popup-authbtn api-button green" type="button">Authorize</button><button class="api-popup-cancel api-button gray" type="button">Cancel</button></div>',
-      '</div>',
-      '</div>'].join(''));
+  $('.api-popup-dialog').remove();
+
+  popupDialog = ['<div class="api-popup-dialog">'];
+
+  if (passwordFlow === true) {
+    popupDialog = popupDialog.concat([
+      '<fieldset>',
+        '<legend class="api-popup-title">Password Auth</legend>',
+        '<div><label for="username">Username:</label> <input type="text" name="username" id="username"></div>',
+        '<div><label for="password">Password:</label> <input type="password" name="password" id="password"></div>',
+      '</fieldset>'
+    ]);
+  }
+
+  popupDialog = $(popupDialog.concat([
+        '<div class="api-popup-title">Select OAuth2.0 Scopes</div>',
+        '<div class="api-popup-content">',
+          '<p>',
+            'Scopes are used to grant an application different levels of access to data on behalf of the end user. Each API may declare one or more scopes. ',
+            '<a href="#">Learn how to use</a>',
+          '</p>',
+          '<p>',
+            '<strong>' + appName + '</strong> API requires the following scopes. Select which ones you want to grant to Swagger UI.',
+          '</p>',
+          '<ul class="api-popup-scopes"></ul>',
+          '<p class="error-msg"></p>',
+          '<div class="api-popup-actions">',
+            '<button class="api-popup-authbtn api-button green" type="button">Authorize</button>',
+            '<button class="api-popup-cancel api-button gray" type="button">Cancel</button>',
+          '</div>',
+        '</div>',
+        '</div>']).join(''));
+
   $(document.body).append(popupDialog);
 
+  //TODO: only display applicable scopes (will need to pass them into handleLogin)
   popup = popupDialog.find('ul.api-popup-scopes').empty();
   for (i = 0; i < scopes.length; i ++) {
     scope = scopes[i];
-    str = '<li><input type="checkbox" id="scope_' + i + '" scope="' + scope.scope + '"/>' + '<label for="scope_' + i + '">' + scope.scope;
+    str = '<li><input type="checkbox" id="scope_' + i + '" scope="' + scope.scope +'" oauthtype="' + scope.OAuthSchemeKey +'" checked/>' + '<label for="scope_' + i + '">' + scope.scope ;
     if (scope.description) {
+      if ($.map(auths, function(n, i) { return i; }).length > 1) //if we have more than one scheme, display schemes
+      str += '<br/><span class="api-scope-desc">' + scope.description + ' ('+ scope.OAuthSchemeKey+')' +'</span>';
+    else
       str += '<br/><span class="api-scope-desc">' + scope.description + '</span>';
     }
     str += '</label></li>';
@@ -98,66 +127,77 @@ function handleLogin() {
     popupDialog.hide();
 
     var authSchemes = window.swaggerUi.api.authSchemes;
+
     var host = window.location;
     var pathname = location.pathname.substring(0, location.pathname.lastIndexOf("/"));
     var defaultRedirectUrl = host.protocol + '//' + host.host + pathname + '/o2c.html';
     var redirectUrl = window.oAuthRedirectUrl || defaultRedirectUrl;
-    var url = null;
+    var scopes = [];
+    var o = popup.find('input:checked');
+    var OAuthSchemeKeys = [];
+    for(k =0; k < o.length; k++) {
+      var scope = $(o[k]).attr('scope');
+      if (scopes.indexOf(scope) === -1)
+        scopes.push(scope);
+      var OAuthSchemeKey = $(o[k]).attr('oauthtype');
+      if (OAuthSchemeKeys.indexOf(OAuthSchemeKey) === -1)
+        OAuthSchemeKeys.push(OAuthSchemeKey);
+    }
+
+    //TODO: merge not replace if scheme is different from any existing
+    //(needs to be aware of schemes to do so correctly)
+    window.enabledScopes = scopes;
 
     for (var key in authSchemes) {
-      if (authSchemes.hasOwnProperty(key)) {
-        var flow = authSchemes[key].flow;
+      if (authSchemes.hasOwnProperty(key) && OAuthSchemeKeys.indexOf(key) != -1) { //only look at keys that match this scope.
+        var dets = authSchemes[key];
+        // RFC 6749 recommends to use state for Implicit and AccessCode Flows:
+        // state: An opaque value used by the client to maintain state between
+        //        the request and callback. The authorization server includes
+        //        this value when redirecting the user-agent back to the
+        //        client. The parameter SHOULD be used for preventing
+        //        cross-site request forgery as described in Section 10.12.
+        // We also use the state as a way to pass the authentication name to match it later.
+        state = key + '&' + Math.random();
 
-        if(authSchemes[key].type === 'oauth2' && flow && (flow === 'implicit' || flow === 'accessCode')) {
-          var dets = authSchemes[key];
-          url = dets.authorizationUrl + '?response_type=' + (flow === 'implicit' ? 'token' : 'code');
+        if (authSchemes[key].type === 'oauth2' && dets.flow) {
           window.swaggerUi.tokenName = dets.tokenName || 'access_token';
-          window.swaggerUi.tokenUrl = (flow === 'accessCode' ? dets.tokenUrl : null);
+          window.swaggerUi.tokenUrl = (dets.flow !== 'implicit' ? dets.tokenUrl : null);
+
+          if (dets.flow === 'implicit' || dets.flow === 'accessCode') {
+            var authorizationUrl = dets.authorizationUrl + '?response_type=' + (dets.flow === 'implicit' ? 'token' : 'code');
+            handleImplicitOrAccessCodeFlow(authorizationUrl, scopes, redirectUrl, state);
+          }
+          else if (dets.flow === 'application') {
+            handleClientCredentialsFlow(scopes, key);
+          }
+          else if (dets.flow === 'password') {
+            handlePasswordFlow(scopes, key);
+          }
         }
         else if(authSchemes[key].grantTypes) {
           // 1.2 support
           var o = authSchemes[key].grantTypes;
+          var authorizationUrl;
           for(var t in o) {
             if(o.hasOwnProperty(t) && t === 'implicit') {
               var dets = o[t];
               var ep = dets.loginEndpoint.url;
-              url = dets.loginEndpoint.url + '?response_type=token';
+              authorizationUrl = dets.loginEndpoint.url + '?response_type=token';
               window.swaggerUi.tokenName = dets.tokenName;
             }
             else if (o.hasOwnProperty(t) && t === 'accessCode') {
               var dets = o[t];
               var ep = dets.tokenRequestEndpoint.url;
-              url = dets.tokenRequestEndpoint.url + '?response_type=code';
+              authorizationUrl = dets.tokenRequestEndpoint.url + '?response_type=code';
               window.swaggerUi.tokenName = dets.tokenName;
             }
           }
+          handleImplicitOrAccessCodeFlow(authorizationUrl, scopes, redirectUrl, state);
         }
       }
     }
-    var scopes = []
-    var o = $('.api-popup-scopes').find('input:checked');
 
-    for(k =0; k < o.length; k++) {
-      var scope = $(o[k]).attr('scope');
-
-      if (scopes.indexOf(scope) === -1)
-        scopes.push(scope);
-    }
-
-    // Implicit auth recommends a state parameter.
-    var state = Math.random ();
-
-    window.enabledScopes=scopes;
-
-    redirect_uri = redirectUrl;
-
-    url += '&redirect_uri=' + encodeURIComponent(redirectUrl);
-    url += '&realm=' + encodeURIComponent(realm);
-    url += '&client_id=' + encodeURIComponent(clientId);
-    url += '&scope=' + encodeURIComponent(scopes.join(scopeSeparator));
-    url += '&state=' + encodeURIComponent(state);
-
-    window.open(url);
   });
 
   popupMask.show();
@@ -165,10 +205,9 @@ function handleLogin() {
   return;
 }
 
-
 function handleLogout() {
-  for(key in window.authorizations.authz){
-    window.authorizations.remove(key)
+  for(key in window.swaggerUi.api.clientAuthorizations.authz){
+    window.swaggerUi.api.clientAuthorizations.remove(key)
   }
   window.enabledScopes = null;
   $('.api-ic.ic-on').addClass('ic-off');
@@ -187,9 +226,10 @@ function initOAuth(opts) {
   popupMask = (o.popupMask||$('#api-common-mask'));
   popupDialog = (o.popupDialog||$('.api-popup-dialog'));
   clientId = (o.clientId||errors.push('missing client id'));
-  clientSecret = (o.clientSecret||errors.push('missing client secret'));
+  clientSecret = (o.clientSecret||null);
   realm = (o.realm||errors.push('missing realm'));
   scopeSeparator = (o.scopeSeparator||' ');
+  additionalQueryStringParams = (o.additionalQueryStringParams||{});
 
   if(errors.length > 0){
     log('auth unable initialize oauth: ' + errors);
@@ -208,13 +248,28 @@ function initOAuth(opts) {
   });
 }
 
-window.processOAuthCode = function processOAuthCode(data) {
+function handleImplicitOrAccessCodeFlow(authorizationUrl, scopes, redirectUrl, state) {
+  redirect_uri = redirectUrl;
+  authorizationUrl += (
+    '&redirect_uri=' + encodeURIComponent(redirectUrl) +
+    '&realm=' + encodeURIComponent(realm) +
+    '&client_id=' + encodeURIComponent(clientId) +
+    '&scope=' + encodeURIComponent(scopes.join(scopeSeparator)) +
+    '&state=' + encodeURIComponent(state)
+  );
+  for (var key in additionalQueryStringParams) {
+    authorizationUrl += '&' + key + '=' + encodeURIComponent(additionalQueryStringParams[key]);
+  }
+
+  window.open(authorizationUrl);
+}
+
+function handleClientCredentialsFlow(scopes, OAuthSchemeKey) {
   var params = {
+    'grant_type': 'client_credentials',
     'client_id': clientId,
     'client_secret': clientSecret,
-    'code': data.code,
-    'grant_type': 'authorization_code',
-    'redirect_uri': redirect_uri
+    'scope': scopes.join(scopeSeparator)
   }
   $.ajax(
   {
@@ -223,7 +278,7 @@ window.processOAuthCode = function processOAuthCode(data) {
     data: params,
     success:function(data, textStatus, jqXHR)
     {
-      onOAuthComplete(data);
+      onOAuthComplete(data, OAuthSchemeKey);
     },
     error: function(jqXHR, textStatus, errorThrown)
     {
@@ -232,8 +287,60 @@ window.processOAuthCode = function processOAuthCode(data) {
   });
 }
 
-window.onOAuthComplete = function onOAuthComplete(token) {
-  if(token) {
+function handlePasswordFlow(scopes, OAuthSchemeKey) {
+  var authParams = {
+    'grant_type': 'password',
+    'client_id': encodeURIComponent(clientId),
+    'client_secret': encodeURIComponent(clientSecret),
+    'username': $('#username').val(),
+    'password': encodeURIComponent($('#password').val()),
+    'scope': scopes.join(scopeSeparator)
+  };
+
+  $.ajax({
+    url: window.swaggerUi.tokenUrl,
+    type: 'POST',
+    data: authParams,
+    success: function (data) {
+      onOAuthComplete(data, OAuthSchemeKey);
+    },
+    error: function(data) {
+      onOAuthComplete("");
+    }
+  });
+}
+
+window.processOAuthCode = function processOAuthCode(data) {
+  var OAuthSchemeKey = data.state;
+  var params = {
+    'grant_type': 'authorization_code',
+    'client_id': clientId,
+    'code': data.code,
+    'redirect_uri': redirect_uri
+  };
+
+  if (clientSecret) {
+    params.client_secret = clientSecret;
+  }
+
+  $.ajax(
+  {
+    url : window.swaggerUi.tokenUrl,
+    type: 'POST',
+    data: params,
+    success:function(data, textStatus, jqXHR)
+    {
+      onOAuthComplete(data, OAuthSchemeKey);
+    },
+    error: function(jqXHR, textStatus, errorThrown)
+    {
+      onOAuthComplete("");
+    }
+  });
+};
+
+window.onOAuthComplete = function onOAuthComplete(token, OAuthSchemeKey) {
+  if (token) {
     if(token.error) {
       var checkbox = $('input[type=checkbox],.secured')
       checkbox.each(function(pos){
@@ -242,8 +349,17 @@ window.onOAuthComplete = function onOAuthComplete(token) {
       alert(token.error);
     }
     else {
+      if (!OAuthSchemeKey) {
+          alert(1);
+          if (token.state !== state) {
+            alert("OAuth2 security error: State is different, possible CSRF attack.");
+          }
+          // Implicit and AccessCode Flows is expected to pass a
+          // 'OAuthSchemeKey&Math.random()' value
+          OAuthSchemeKey = token.state.replace(/^(.*)&/, '$1');
+      }
       var b = token[window.swaggerUi.tokenName];
-      if(b){
+      if (b) {
         // if all roles are satisfied
         var o = null;
         $.each($('.auth .api-ic .api_information_panel'), function(k, v) {
@@ -283,8 +399,8 @@ window.onOAuthComplete = function onOAuthComplete(token) {
             }
           }
         });
-        window.swaggerUi.api.clientAuthorizations.add(oauth2KeyName, new SwaggerClient.ApiKeyAuthorization('Authorization', 'Bearer ' + b, 'header'));
+        window.swaggerUi.api.clientAuthorizations.add(OAuthSchemeKey, new SwaggerClient.ApiKeyAuthorization('Authorization', 'Bearer ' + b, 'header'));
       }
     }
   }
-}
+};
