@@ -8,6 +8,8 @@ var state;
 var clientSecret;
 var scopeSeparator;
 var additionalQueryStringParams;
+// this variable is for mLumen API only.
+var serviceId;
 
 function handleLogin() {
   var scopes = [];
@@ -230,6 +232,8 @@ function initOAuth(opts) {
   realm = (o.realm||errors.push('missing realm'));
   scopeSeparator = (o.scopeSeparator||' ');
   additionalQueryStringParams = (o.additionalQueryStringParams||{});
+  serviceId = (o.serviceId||null);
+
 
   if(errors.length > 0){
     log('auth unable initialize oauth: ' + errors);
@@ -297,10 +301,16 @@ function handlePasswordFlow(scopes, OAuthSchemeKey) {
     'scope': scopes.join(scopeSeparator)
   };
 
+  var headers = {};
+
+  if (serviceId !== null)
+    headers['Service-Id'] = serviceId;
+
   $.ajax({
     url: window.swaggerUi.tokenUrl,
     type: 'POST',
     data: authParams,
+    headers: headers,
     success: function (data) {
       onOAuthComplete(data, OAuthSchemeKey);
     },

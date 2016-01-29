@@ -1,6 +1,6 @@
 <?php
 
-Route::any(Config::get('swaggervel.doc-route').'/{page?}', function($page='api-docs.json') {
+Route::any(Config::get('swaggervel.doc-route') . '/{page?}', function ($page = 'api-docs.json') {
     $filePath = Config::get('swaggervel.doc-dir') . "/{$page}";
 
     if (File::extension($filePath) === "") {
@@ -12,13 +12,13 @@ Route::any(Config::get('swaggervel.doc-route').'/{page?}', function($page='api-d
 
     $content = File::get($filePath);
     return Response::make($content, 200, array(
-        'Content-Type' => 'application/json'
+        'Content-Type' => 'application/json',
     ));
 });
 
-Route::get('api-docs', function() {
+Route::get('api-docs', function () {
     if (Config::get('swaggervel.generateAlways')) {
-        $appDir = base_path()."/".Config::get('swaggervel.app-dir');
+        $appDir = base_path() . "/" . Config::get('swaggervel.app-dir');
         $docDir = Config::get('swaggervel.doc-dir');
 
         if (!File::exists($docDir) || is_writable($docDir)) {
@@ -34,9 +34,9 @@ Route::get('api-docs', function() {
             $defaultSwaggerVersion = Config::get('swaggervel.default-swagger-version');
             $excludeDirs = Config::get('swaggervel.excludes');
 
-            $swagger =  \Swagger\scan($appDir, [
-                'exclude' => $excludeDirs
-                ]);
+            $swagger = \Swagger\scan($appDir, [
+                'exclude' => $excludeDirs,
+            ]);
 
             $filename = $docDir . '/api-docs.json';
             file_put_contents($filename, $swagger);
@@ -53,24 +53,25 @@ Route::get('api-docs', function() {
 
     //need the / at the end to avoid CORS errors on Homestead systems.
     $response = response()->view('swaggervel::index', array(
-        'secure'         => Request::secure(),
-        'urlToDocs'      => url(Config::get('swaggervel.doc-route')),
+        'secure' => Request::secure(),
+        'urlToDocs' => url(Config::get('swaggervel.doc-route')),
         'requestHeaders' => Config::get('swaggervel.requestHeaders'),
-        'clientId'       => Input::get("client_id"),
-        'clientSecret'       => Input::get("client_secret"),
-        'realm'       => Input::get("realm"),
-        'appName'       => Input::get("appName"),
-        )
+        'clientId' => Input::get("client_id"),
+        'clientSecret' => Input::get("client_secret"),
+        'realm' => Input::get("realm"),
+        'appName' => Input::get("appName"),
+        'serviceId' => Input::get("service-id"),
+    )
     );
 
     //need the / at the end to avoid CORS errors on Homestead systems.
     /*$response = Response::make(
-        View::make('swaggervel::index', array(
-                'secure'         => Request::secure(),
-                'urlToDocs'      => url(Config::get('swaggervel.doc-route')),
-                'requestHeaders' => Config::get('swaggervel.requestHeaders') )
-        ),
-        200
+    View::make('swaggervel::index', array(
+    'secure'         => Request::secure(),
+    'urlToDocs'      => url(Config::get('swaggervel.doc-route')),
+    'requestHeaders' => Config::get('swaggervel.requestHeaders') )
+    ),
+    200
     );*/
 
     if (Config::has('swaggervel.viewHeaders')) {

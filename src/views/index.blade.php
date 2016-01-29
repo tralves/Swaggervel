@@ -74,13 +74,17 @@ header("Access-Control-Allow-Headers: X-Requested-With");
                                 clientSecret: "{!! $clientSecret !!}"||"_",
                                 realm: "{!! $realm !!}"||"_",
                                 appName: "{!! $appName !!}"||"_",
-                                scopeSeparator: ","
+                                scopeSeparator: ',',
+                                serviceId: "{{$serviceId}}"||"_",
                             });
 
                             window.oAuthRedirectUrl = "{{ url('vendor/swaggervel/o2c.html') }}";
                             $('#clientId').html("{!! $clientId !!}"||"my-client-id");
                             $('#redirectUrl').html(window.oAuthRedirectUrl);
                         }
+
+                        if ('{{$serviceId}}')
+                            $('input[name="Service-Id"]').val('{{$serviceId}}');
 
                         if (window.SwaggerTranslator) {
                             window.SwaggerTranslator.translate();
@@ -118,7 +122,8 @@ header("Access-Control-Allow-Headers: X-Requested-With");
                                 clientSecret: $('#input_clientSecret').val()||"_",
                                 realm: $('#input_realm').val()||"_",
                                 appName: $('#input_appName').val()||"_",
-                                scopeSeparator: ","
+                                scopeSeparator: ',',
+                                serviceId: "{{$serviceId}}"||"_",
                             });
                         }
                 });
